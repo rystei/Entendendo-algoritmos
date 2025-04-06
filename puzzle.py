@@ -1,20 +1,23 @@
 import pygame
 import time
 import heapq
+from collections import deque
 
 # Definição de cores
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (200, 200, 200)
 BLUE = (100, 100, 255)
+GREEN = (100, 255, 100)
+RED = (255, 100, 100)
 
 # Configuração da tela do Pygame
 WIDTH, HEIGHT = 400, 400
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Simulador do 8-Puzzle - A* com heurística")
+pygame.display.set_caption("Simulador do 8-Puzzle")
 
 # Estado inicial e objetivo
-estado_inicial = [[8, 2, 5], [4, 0, 6], [7, 3, 1]]
+estado_inicial = [[1, 2, 3], [4, 0, 6], [7, 5, 8]]
 estado_objetivo = [[1, 2, 3], [4, 5, 6], [7, 8, 0]]
 
 # Movimentos possíveis
@@ -42,77 +45,131 @@ def mover(estado, direcao):
         return novo_estado
     return None
 
-def gerar_vizinhos(estado):
-    vizinhos = []
-    for direcao in movimentos:
-        novo_estado = mover(estado, direcao)
-        if novo_estado:
-            vizinhos.append(novo_estado)
-    return vizinhos
-
-def estados_iguais(e1, e2):
-    return all(e1[i][j] == e2[i][j] for i in range(3) for j in range(3))
-
-def serializar(estado):
-    return tuple(tuple(linha) for linha in estado)
-
-def pecas_corretas(estado, objetivo):
-    return sum(
-        1 for i in range(3) for j in range(3)
-        if estado[i][j] != 0 and estado[i][j] == objetivo[i][j]
-    )
-
-def pecas_fora_do_lugar(estado, objetivo):
-    return sum(
-        1 for i in range(3) for j in range(3)
-        if estado[i][j] != 0 and estado[i][j] != objetivo[i][j]
-    )
-
-def distancia_manhattan(estado, objetivo):
-    posicoes_objetivo = {objetivo[i][j]: (i, j) for i in range(3) for j in range(3)}
-    distancia = 0
-    for i in range(3):
-        for j in range(3):
-            valor = estado[i][j]
-            if valor != 0:
-                oi, oj = posicoes_objetivo[valor]
-                distancia += abs(i - oi) + abs(j - oj)
-    return distancia
-
-def a_estrela(inicio, objetivo, heuristica):
-    memoria = {
-        'visitados': 0,
-        'estados_unicos': set(),
-        'max_profundidade': 0
-    }
-    
+def bfs(inicio, objetivo):
+    fila = deque([(inicio, [])])
     visitados = set()
-    fila = []
-    heapq.heappush(fila, (heuristica(inicio, objetivo), 0, inicio, []))
     
     while fila:
-        estimativa_total, custo, estado_atual, caminho = heapq.heappop(fila)
-        estado_serial = serializar(estado_atual)
-        memoria['visitados'] += 1
+        estado, caminho = fila.popleft()
+        estado_tuple = tuple(tuple(linha) for linha in estado)
         
-        if estado_serial in visitados:
+        if estado_tuple in visitados:
             continue
-            
-        visitados.add(estado_serial)
-        memoria['estados_unicos'].add(estado_serial)
-        memoria['max_profundidade'] = max(memoria['max_profundidade'], len(caminho))
+        visitados.add(estado_tuple)
         
-        if estados_iguais(estado_atual, objetivo):
-            return caminho + [estado_atual], memoria
+        if estado == objetivo:
+            return caminho + [estado]
         
-        for vizinho in gerar_vizinhos(estado_atual):
-            if serializar(vizinho) not in visitados:
-                novo_caminho = caminho + [estado_atual]
-                novo_custo = custo + 1
-                prioridade = novo_custo + heuristica(vizinho, objetivo)
-                heapq.heappush(fila, (prioridade, novo_custo, vizinho, novo_caminho))
+        for direcao in movimentos:
+            novo_estado = mover(estado, direcao)
+            if novo_estado:
+                fila.append((novo_estado, caminho + [estado]))
     
-    return None, memoria
+    return None
+
+def dfs(inicio, objetivo):
+    pilha = [(inicio, [])]
+    visitados = set()
+    
+    while pilha:
+        estado, caminho = pilha.pop()
+        estado_tuple = tuple(tuple(linha) for linha in estado)
+        
+        if estado_tuple in visitados:
+            continue
+        visitados.add(estado_tuple)
+        
+        if estado == objetivo:
+            return caminho + [estado]
+        
+        for direcao in movimentos:
+            novo_estado = mover(estado, direcao)
+            if novo_estado:
+                pilha.append((novo_estado, caminho + [estado]))
+    
+    return None
+
+def heuristica_pecas(inicio, objetivo):
+    fila = []
+    heapq.heappush(fila, (0, inicio, [], {'visitados': 0, 'pecas_corretas': []}))
+    visitados = set()
+    
+    while fila:
+        _, estado, caminho, historico = heapq.heappop(fila)
+        estado_tuple = tuple(tuple(linha) for linha in estado)
+        
+        if estado_tuple in visitados:
+            continue
+        visitados.add(estado_tuple)
+        
+        pecas_corretas = sum(1 for i in range(3) for j in range(3) 
+                           if estado[i][j] != 0 and estado[i][j] == objetivo[i][j])
+        historico['pecas_corretas'].append(pecas_corretas)
+        historico['visitados'] += 1
+        
+        if estado == objetivo:
+            print("\nHistórico de peças corretas durante a busca:")
+            print(f"Quantidade em cada passo: {historico['pecas_corretas']}")
+            print(f"Total de estados visitados: {historico['visitados']}")
+            return caminho + [estado]
+        
+        for direcao in movimentos:
+            novo_estado = mover(estado, direcao)
+            if novo_estado:
+                novo_caminho = caminho + [estado]
+                pecas_fora = sum(1 for i in range(3) for j in range(3) 
+                               if novo_estado[i][j] != 0 and novo_estado[i][j] != objetivo[i][j])
+                heapq.heappush(fila, (pecas_fora, novo_estado, novo_caminho, historico))
+    
+    return None
+
+def heuristica_movimentos(inicio, objetivo):
+    fila = []
+    heapq.heappush(fila, (0, inicio, [], {'visitados': 0, 'distancias': []}))
+    visitados = set()
+    
+    while fila:
+        _, estado, caminho, historico = heapq.heappop(fila)
+        estado_tuple = tuple(tuple(linha) for linha in estado)
+        
+        if estado_tuple in visitados:
+            continue
+        visitados.add(estado_tuple)
+        
+        distancia_total = 0
+        for i in range(3):
+            for j in range(3):
+                if estado[i][j] != 0:
+                    for x in range(3):
+                        for y in range(3):
+                            if objetivo[x][y] == estado[i][j]:
+                                distancia_total += abs(i - x) + abs(j - y)
+                                break
+        historico['distancias'].append(distancia_total)
+        historico['visitados'] += 1
+        
+        if estado == objetivo:
+            print("\nHistórico de distâncias durante a busca:")
+            print(f"Distância em cada passo: {historico['distancias']}")
+            print(f"Total de estados visitados: {historico['visitados']}")
+            return caminho + [estado]
+        
+        for direcao in movimentos:
+            novo_estado = mover(estado, direcao)
+            if novo_estado:
+                novo_caminho = caminho + [estado]
+                nova_distancia = 0
+                for i in range(3):
+                    for j in range(3):
+                        if novo_estado[i][j] != 0:
+                            for x in range(3):
+                                for y in range(3):
+                                    if objetivo[x][y] == novo_estado[i][j]:
+                                        nova_distancia += abs(i - x) + abs(j - y)
+                                        break
+                heapq.heappush(fila, (nova_distancia, novo_estado, novo_caminho, historico))
+    
+    return None
 
 def desenhar_tabuleiro(estado):
     screen.fill(WHITE)
@@ -146,34 +203,12 @@ def executar_simulacao(caminho):
     time.sleep(1)
     pygame.quit()
 
-def exibir_estatisticas(caminho, objetivo, memoria):
-    if not caminho:
-        return
+caminho_solucao = heuristica_movimentos(estado_inicial, estado_objetivo)
+caminho_solucao = bfs(estado_inicial, estado_objetivo)
 
-    print("\nEstatísticas detalhadas:")
-    print(f"Total de estados visitados: {memoria['visitados']}")
-    print(f"Estados únicos na memória: {len(memoria['estados_unicos'])}")
-    print(f"Profundidade máxima alcançada: {memoria['max_profundidade']}")
-    print(f"Comprimento da solução: {len(caminho)-1} movimentos\n")
-
-    print("Progresso por estado:")
-    for idx, estado in enumerate(caminho):
-        corretas = pecas_corretas(estado, objetivo)
-        manhattan = distancia_manhattan(estado, objetivo)
-        print(f"Estado {idx}:")
-        print(f"Peças no lugar: {corretas}/8")
-        print(f"Distância Movimento total: {manhattan}")
-        if idx > 0:
-            diff = [(i,j) for i in range(3) for j in range(3) 
-                   if caminho[idx-1][i][j] != estado[i][j]]
-            print(f"Peça movida: {estado[diff[0][0]][diff[0][1]]}")
-        print("-------------------")
-
-# Execução principal
-caminho_solucao, memoria = a_estrela(estado_inicial, estado_objetivo, distancia_manhattan)
 
 if caminho_solucao:
+    print(f"\nSolução encontrada em {len(caminho_solucao)-1} movimentos!")
     executar_simulacao(caminho_solucao)
-    exibir_estatisticas(caminho_solucao, estado_objetivo, memoria)
 else:
     print("Nenhuma solução encontrada.")
